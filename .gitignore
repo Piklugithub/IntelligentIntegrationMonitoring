@@ -1,0 +1,117 @@
+
+# ==========================================
+# .NET / Visual Studio
+# ==========================================
+
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+*.sln.ide
+
+# Visual Studio generated files
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa]rtifacts/
+TestResults/
+coverage/
+coverage.*
+*.coverage
+*.coveragexml
+
+# ==========================================
+# NuGet
+# ==========================================
+
+*.nupkg
+*.snupkg
+.nuget/
+
+# ==========================================
+# Application configuration / secrets
+# ==========================================
+
+.env
+.env.*
+!.env.example
+
+appsettings.Local.json
+appsettings.Development.Local.json
+
+# User secrets and certificates
+secrets.json
+*.pfx
+*.p12
+*.key
+*.pem
+
+# ==========================================
+# Logs
+# ==========================================
+
+*.log
+logs/
+LogFiles/
+[Ll]og/
+
+# Keep intentionally maintained sample data
+!SampleData/
+!sample-data/
+!SampleData/**/*.json
+!sample-data/**/*.json
+
+# ==========================================
+# Docker / local runtime data
+# ==========================================
+
+docker-compose.override.yml
+
+# Local database and container data
+docker-data/
+docker-volumes/
+data/
+volumes/
+
+# ==========================================
+# Grafana / Loki / Alloy runtime data
+# ==========================================
+
+grafana-data/
+loki-data/
+alloy-data/
+
+# ==========================================
+# Node.js / React (future frontend)
+# ==========================================
+
+node_modules/
+dist/
+build/
+.next/
+.nuxt/
+coverage/
+*.tsbuildinfo
+
+# ==========================================
+# Operating system
+# ==========================================
+
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ==========================================
+# Temporary files
+# ==========================================
+
+*.tmp
+*.temp
+*.bak
+*.swp
+*.orig

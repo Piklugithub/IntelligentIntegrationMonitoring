@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/Infrastructure/" />
+  <Folder Name="/SampleData/" />
+  <Folder Name="/Solution Items/">
+    <File Path=".gitignore" />
+  </Folder>
+  <Folder Name="/src/" />
+  <Folder Name="/src/IntelligentMonitoring/">
+    <Project Path="src/IntelligentMonitoring/IntelligentMonitoring.Api/IntelligentMonitoring.Api.csproj" />
+    <Project Path="src/IntelligentMonitoring/IntelligentMonitoring.Application/IntelligentMonitoring.Application.csproj" />
+    <Project Path="src/IntelligentMonitoring/IntelligentMonitoring.Domain/IntelligentMonitoring.Domain.csproj" />
+    <Project Path="src/IntelligentMonitoring/IntelligentMonitoring.Infrastructure/IntelligentMonitoring.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IntelligentMonitoring.Tests/IntelligentMonitoring.Tests.csproj" />
+  </Folder>
+</Solution>

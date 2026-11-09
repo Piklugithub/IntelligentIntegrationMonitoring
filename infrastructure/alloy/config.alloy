@@ -1,0 +1,60 @@
+
+local.file_match "integration_logs" {
+    path_targets = [
+        {
+            __path__ = "/var/log/integration/*.jsonl",
+            job      = "integration-logs",
+        },
+    ]
+}
+
+loki.source.file "integration_logs" {
+    targets    = local.file_match.integration_logs.targets
+    forward_to = [loki.process.integration_logs.receiver]
+}
+
+loki.process "integration_logs" {
+
+    // Extract fields from each JSON log event.
+    stage.json {
+        expressions = {
+            timestamp       = "timestamp",
+            level           = "level",
+            service_name    = "serviceName",
+            environment     = "environment",
+            transaction_id  = "transactionId",
+            trace_id        = "traceId",
+        }
+    }
+
+    // Use the event timestamp rather than collection time.
+    stage.timestamp {
+        source = "timestamp"
+        format = "RFC3339"
+    }
+
+    // Only low-cardinality fields become Loki labels.
+    stage.labels {
+        values = {
+            service_name = "service_name",
+            environment  = "environment",
+            level        = "level",
+        }
+    }
+
+    // Keep correlation IDs as structured metadata, not labels.
+    stage.structured_metadata {
+        values = {
+            transaction_id = "transaction_id",
+            trace_id       = "trace_id",
+        }
+    }
+
+    forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+    endpoint {
+        url = "http://loki:3100/loki/api/v1/push"
+    }
+}
