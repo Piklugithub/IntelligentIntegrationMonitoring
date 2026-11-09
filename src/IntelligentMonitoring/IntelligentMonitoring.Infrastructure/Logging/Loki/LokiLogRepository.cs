@@ -26,7 +26,12 @@ public sealed class LokiLogRepository(HttpClient httpClient)
         var query =
             $"{{job=\"integration-logs\"}} | json | transactionId=\"{EscapeLogQlString(transactionId)}\"";
 
-        return QueryLogsAsync(query, startTime, endTime, cancellationToken);
+        return QueryLogsAsync(
+                query,
+                startTime,
+                endTime,
+                DefaultLimit,
+                cancellationToken);
     }
 
     public Task<IReadOnlyList<LokiLogEntry>> SearchByTraceIdAsync(
@@ -40,14 +45,20 @@ public sealed class LokiLogRepository(HttpClient httpClient)
         var query =
             $"{{job=\"integration-logs\"}} | json | traceId=\"{EscapeLogQlString(traceId)}\"";
 
-        return QueryLogsAsync(query, startTime, endTime, cancellationToken);
+        return QueryLogsAsync(
+            query,
+            startTime,
+            endTime,
+            DefaultLimit,
+            cancellationToken);
     }
 
     private async Task<IReadOnlyList<LokiLogEntry>> QueryLogsAsync(
-        string query,
-        DateTimeOffset startTime,
-        DateTimeOffset endTime,
-        CancellationToken cancellationToken)
+    string query,
+    DateTimeOffset startTime,
+    DateTimeOffset endTime,
+    int limit,
+    CancellationToken cancellationToken)
     {
         if (startTime >= endTime)
         {
@@ -59,7 +70,7 @@ public sealed class LokiLogRepository(HttpClient httpClient)
             $"query={Uri.EscapeDataString(query)}" +
             $"&start={startTime.ToUnixTimeMilliseconds() * 1_000_000}" +
             $"&end={endTime.ToUnixTimeMilliseconds() * 1_000_000}" +
-            $"&limit={DefaultLimit}" +
+            $"&limit={limit}" +
             "&direction=backward";
 
         using var response = await httpClient.GetAsync(
@@ -120,6 +131,68 @@ public sealed class LokiLogRepository(HttpClient httpClient)
 
         return entries;
     }
+
+
+    public Task<IReadOnlyList<LokiLogEntry>> SearchAsync(
+        LokiLogSearchRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (request.StartTime >= request.EndTime)
+        {
+            throw new ArgumentException(
+                "Start time must be earlier than end time.");
+        }
+
+        // Avoid unrestricted Loki queries.
+        var hasSearchFilter =
+            !string.IsNullOrWhiteSpace(request.TransactionId) ||
+            !string.IsNullOrWhiteSpace(request.TraceId) ||
+            !string.IsNullOrWhiteSpace(request.ServiceName) ||
+            !string.IsNullOrWhiteSpace(request.Level) ||
+            !string.IsNullOrWhiteSpace(request.IntegrationType);
+
+        if (!hasSearchFilter)
+        {
+            throw new ArgumentException(
+                "At least one search filter must be provided.");
+        }
+
+        var filters = new List<string>();
+
+        AddFilter(filters, "transactionId", request.TransactionId);
+        AddFilter(filters, "traceId", request.TraceId);
+        AddFilter(filters, "serviceName", request.ServiceName);
+        AddFilter(filters, "level", request.Level);
+        AddFilter(filters, "integrationType", request.IntegrationType);
+
+        var query =
+            "{job=\"integration-logs\"} | json | " +
+            string.Join(" | ", filters);
+
+        var limit = Math.Clamp(request.Limit, 1, DefaultLimit);
+
+        return QueryLogsAsync(
+            query,
+            request.StartTime,
+            request.EndTime,
+            limit,
+            cancellationToken);
+    }
+
+    private static void AddFilter(
+        List<string> filters,
+        string field,
+        string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            filters.Add(
+                $"{field}=\"{EscapeLogQlString(value.Trim())}\"");
+        }
+    }
+
 
     private static string EscapeLogQlString(string value)
     {

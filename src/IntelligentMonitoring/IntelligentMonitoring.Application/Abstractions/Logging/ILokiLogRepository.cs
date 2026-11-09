@@ -15,4 +15,7 @@ public interface ILokiLogRepository
         DateTimeOffset startTime,
         DateTimeOffset endTime,
         CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<LokiLogEntry>> SearchAsync(
+    LokiLogSearchRequest request,
+    CancellationToken cancellationToken = default);
 }

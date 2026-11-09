@@ -37,6 +37,36 @@ public sealed class LogSearchService(
             cancellationToken);
     }
 
+    public Task<IReadOnlyList<LokiLogEntry>> SearchAsync(
+        LokiLogSearchRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (request.StartTime >= request.EndTime)
+        {
+            throw new ArgumentException(
+                "Start time must be earlier than end time.");
+        }
+
+        var hasSearchFilter =
+            !string.IsNullOrWhiteSpace(request.TransactionId) ||
+            !string.IsNullOrWhiteSpace(request.TraceId) ||
+            !string.IsNullOrWhiteSpace(request.ServiceName) ||
+            !string.IsNullOrWhiteSpace(request.Level) ||
+            !string.IsNullOrWhiteSpace(request.IntegrationType);
+
+        if (!hasSearchFilter)
+        {
+            throw new ArgumentException(
+                "At least one search filter must be provided.");
+        }
+
+        return lokiLogRepository.SearchAsync(
+            request,
+            cancellationToken);
+    }
+
     private static void ValidateSearch(
         string identifier,
         DateTimeOffset startTime,

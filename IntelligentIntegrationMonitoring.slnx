@@ -4,12 +4,15 @@
   <Folder Name="/Solution Items/">
     <File Path=".gitignore" />
   </Folder>
-  <Folder Name="/src/" />
+  <Folder Name="/src/">
+    <Project Path="IntelligentMonitoring.Contracts/IntelligentMonitoring.Contracts.csproj" Id="ba4f0c99-7877-4b20-9f66-6546a19ad4b8" />
+  </Folder>
   <Folder Name="/src/IntelligentMonitoring/">
     <Project Path="src/IntelligentMonitoring/IntelligentMonitoring.Api/IntelligentMonitoring.Api.csproj" />
     <Project Path="src/IntelligentMonitoring/IntelligentMonitoring.Application/IntelligentMonitoring.Application.csproj" />
     <Project Path="src/IntelligentMonitoring/IntelligentMonitoring.Domain/IntelligentMonitoring.Domain.csproj" />
     <Project Path="src/IntelligentMonitoring/IntelligentMonitoring.Infrastructure/IntelligentMonitoring.Infrastructure.csproj" />
+    <Project Path="src/IntelligentMonitoring/IntelligentMonitoring.Worker/IntelligentMonitoring.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/IntelligentMonitoring.Tests/IntelligentMonitoring.Tests.csproj" />

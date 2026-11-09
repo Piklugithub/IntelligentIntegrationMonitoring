@@ -1,6 +1,7 @@
 ﻿
 using IntelligentMonitoring.Application.Abstractions.Logging;
 using IntelligentMonitoring.Application.Models.Logging;
+using IntelligentMonitoring.Infrastructure.Logging.Loki;
 using Microsoft.AspNetCore.Mvc;
 
 namespace IntelligentMonitoring.Api.Controllers;
@@ -8,8 +9,10 @@ namespace IntelligentMonitoring.Api.Controllers;
 [ApiController]
 [Route("api/logs")]
 public sealed class LogsController(
-    ILogSearchService logSearchService) : ControllerBase
+    ILogSearchService logSearchService
+    ) : ControllerBase
 {
+    
     [HttpGet("transaction/{transactionId}")]
     [ProducesResponseType(typeof(IReadOnlyList<LokiLogEntry>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -62,5 +65,17 @@ public sealed class LogsController(
             cancellationToken);
 
         return Ok(logs);
+    }
+
+    [HttpGet("search")]
+    public async Task<IActionResult> Search(
+        [FromQuery] LokiLogSearchRequest request,
+        CancellationToken cancellationToken)
+    {
+        var results = await logSearchService.SearchAsync(
+            request,
+            cancellationToken);
+
+        return Ok(results);
     }
 }
