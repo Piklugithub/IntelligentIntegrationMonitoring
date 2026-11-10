@@ -1,0 +1,73 @@
+Local Message Publish Step
+
+Step 1. Navigate to infrastructure directory
+Open PowerShell or CMD:
+cd "C:\Users\LENOVO\MyProject\IntelligentIntegrationMonitoring\infrastructure"
+
+
+Step 2. Start Docker containers
+docker compose up -d
+
+
+Verify containers:
+docker ps
+
+
+Expected containers:
+iim-kafka
+iim-loki
+iim-alloy
+iim-grafana
+
+
+Step 3. Verify Kafka container
+docker ps --filter "name=iim-kafka"
+
+
+Check Kafka image:
+docker inspect iim-kafka --format "{{.Config.Image}}"
+
+
+Step 4. Check Kafka topic
+docker exec -it iim-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+
+
+Verify that this topic exists:
+integration.failures
+
+
+Step 5. Describe Kafka topic
+This checks the topic configuration:
+docker exec -it iim-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic integration.failures
+
+
+You should see information about partitions, replicas and leaders.
+Step 6. Start the .NET Worker
+Open Visual Studio and run:
+
+IntelligentMonitoring.Worker
+
+Keep its console running.
+
+The Worker should connect to Kafka and subscribe to integration.failures.
+Step 7. Start Kafka console producer
+Open a second PowerShell terminal and execute:
+docker exec -it iim-kafka /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic integration.failures
+
+
+Your terminal will wait for a message.
+Step 8. Publish failure event
+Paste this JSON as one line:
+{"EventId":"e7f1e5a0-2c3b-4a6d-9e8f-123456789012","EventVersion":1,"OccurredAtUtc":"2026-11-10T08:30:00Z","ServiceName":"warehouse-events-api","Environment":"QA","IntegrationType":"Kafka","TransactionId":"TXN-20003","TraceId":"TRACE-20003","ErrorCode":"DOWNSTREAM_TIMEOUT","ErrorMessage":"Downstream service did not respond within the configured timeout."}
+
+
+Press Enter.
+
+Step 10. Verify Kafka messages
+You can inspect messages from the topic using a console consumer.
+
+Open another PowerShell terminal:
+docker exec -it iim-kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic integration.failures --from-beginning
+
+
+This displays messages from the beginning of the topic. Press Ctrl + C to exit.

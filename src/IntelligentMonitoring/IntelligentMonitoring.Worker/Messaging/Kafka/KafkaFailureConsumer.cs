@@ -3,6 +3,7 @@ using System.Text.Json;
 using Confluent.Kafka;
 using IntelligentMonitoring.Contracts.Events;
 using IntelligentMonitoring.Application.Abstractions.Investigations;
+using IntelligentMonitoring.Application.Models.Investigations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -44,7 +45,8 @@ public sealed class KafkaFailureConsumer(
             BootstrapServers = bootstrapServers,
             GroupId = consumerGroup,
             AutoOffsetReset = AutoOffsetReset.Earliest,
-            EnableAutoCommit = false
+            EnableAutoCommit = false,
+            EnableAutoOffsetStore = false
         };
 
         using var consumer =
@@ -87,7 +89,7 @@ public sealed class KafkaFailureConsumer(
                         result.Message.Value,
                         _jsonOptions);
 
-                // 3. Validate the deserialized event.
+                // 3. Validate the failure event.
                 if (failureEvent is null)
                 {
                     logger.LogWarning(
@@ -99,10 +101,22 @@ public sealed class KafkaFailureConsumer(
                     continue;
                 }
 
+                if (failureEvent.EventId == Guid.Empty)
+                {
+                    throw new InvalidOperationException(
+                        "Failure event does not contain a valid EventId.");
+                }
+
                 if (string.IsNullOrWhiteSpace(failureEvent.TransactionId))
                 {
                     throw new InvalidOperationException(
                         "Failure event does not contain a TransactionId.");
+                }
+
+                if (failureEvent.OccurredAtUtc == default)
+                {
+                    throw new InvalidOperationException(
+                        "Failure event does not contain a valid OccurredAtUtc.");
                 }
 
                 logger.LogError(
@@ -114,12 +128,17 @@ public sealed class KafkaFailureConsumer(
                     failureEvent.ErrorCode,
                     failureEvent.ErrorMessage);
 
-                // 4. Create a dependency injection scope.
-                using var scope = scopeFactory.CreateScope();
+                // 4. Create an asynchronous DI scope.
+                await using var scope =
+                    scopeFactory.CreateAsyncScope();
 
                 var investigationService =
                     scope.ServiceProvider
                         .GetRequiredService<IFailureInvestigationService>();
+
+                var persistenceRepository =
+                    scope.ServiceProvider
+                        .GetRequiredService<IFailureInvestigationRepository>();
 
                 // 5. Define the investigation time window.
                 var startTime =
@@ -129,7 +148,7 @@ public sealed class KafkaFailureConsumer(
                     DateTimeOffset.UtcNow,
                     failureEvent.OccurredAtUtc.AddMinutes(15));
 
-                // 6. Investigate the transaction.
+                // 6. Investigate the transaction using Loki.
                 var report =
                     await investigationService.InvestigateTransactionAsync(
                         failureEvent.TransactionId,
@@ -163,11 +182,37 @@ public sealed class KafkaFailureConsumer(
                     report.ErrorCode,
                     string.Join(", ", report.ServicesInvolved));
 
-                // 8. Commit only after successful investigation.
+                // 8. Map event and investigation report to persistence model.
+                var record = new FailureInvestigationRecord
+                {
+                    EventId = failureEvent.EventId,
+                    EventVersion = failureEvent.EventVersion,
+                    OccurredAtUtc = failureEvent.OccurredAtUtc,
+                    ServiceName = failureEvent.ServiceName,
+                    Environment = failureEvent.Environment,
+                    IntegrationType = failureEvent.IntegrationType,
+                    TransactionId = failureEvent.TransactionId,
+                    TraceId = failureEvent.TraceId,
+                    ErrorCode = failureEvent.ErrorCode,
+                    ErrorMessage = failureEvent.ErrorMessage,
+                    Investigation = report
+                };
+
+                // 9. Persist failure event and investigation in SQL Server.
+                await persistenceRepository.SaveAsync(
+                    record,
+                    stoppingToken);
+
+                logger.LogInformation(
+                    "Failure investigation successfully saved to SQL Server. EventId: {EventId}, TransactionId: {TransactionId}",
+                    failureEvent.EventId,
+                    failureEvent.TransactionId);
+
+                // 10. Commit Kafka offset only after successful persistence.
                 consumer.Commit(result);
 
                 logger.LogInformation(
-                    "Failure event successfully investigated and committed. TransactionId: {TransactionId}, Offset: {Offset}",
+                    "Failure event successfully processed and committed. TransactionId: {TransactionId}, Offset: {Offset}",
                     failureEvent.TransactionId,
                     result.Offset);
             }
@@ -187,7 +232,8 @@ public sealed class KafkaFailureConsumer(
                     result?.Partition,
                     result?.Offset);
 
-                // Poison message policy: skip malformed JSON.
+                // Development policy: skip malformed messages.
+                // Production: publish to a dead-letter topic first.
                 if (result is not null)
                     consumer.Commit(result);
             }
@@ -199,19 +245,20 @@ public sealed class KafkaFailureConsumer(
             }
             catch (Exception ex)
             {
-                logger.LogError(
+                logger.LogCritical(
                     ex,
-                    "Failure investigation failed. Partition: {Partition}, Offset: {Offset}. Message will not be committed.",
+                    "Failure processing failed. Partition: {Partition}, Offset: {Offset}. Message will not be committed.",
                     result?.Partition,
                     result?.Offset);
 
-                // Stop processing rather than accidentally committing
-                // a later offset and losing this failed message.
+                // Stop the worker so that a later offset is not
+                // accidentally committed past this failed message.
                 throw;
             }
         }
 
-        logger.LogInformation("Kafka consumer is stopping.");
+        logger.LogInformation(
+            "Kafka consumer is stopping.");
     }
 
     private static DateTimeOffset Max(
