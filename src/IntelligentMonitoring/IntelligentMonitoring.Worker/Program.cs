@@ -21,7 +21,7 @@ builder.Services.AddScoped<
 
 // Background workers.
 builder.Services.AddHostedService<KafkaFailureConsumer>();
-
+builder.Services.AddInfrastructure(builder.Configuration);
 var host = builder.Build();
 
 await host.RunAsync();

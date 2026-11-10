@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\IntelligentMonitoring\IntelligentMonitoring.Application\IntelligentMonitoring.Application.csproj" />
+    <ProjectReference Include="..\..\src\IntelligentMonitoring\IntelligentMonitoring.Infrastructure\IntelligentMonitoring.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

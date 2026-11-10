@@ -5,6 +5,7 @@ using IntelligentMonitoring.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using IntelligentMonitoring.Infrastructure.AI.Ollama;
 
 namespace IntelligentMonitoring.Infrastructure;
 
@@ -22,6 +23,20 @@ public static class DependencyInjection
             configuration.GetConnectionString("MonitoringDb")
             ?? throw new InvalidOperationException(
                 "MonitoringDb connection string is missing.");
+        var ollamaBaseUrl = configuration["Ollama:BaseUrl"]
+            ?? throw new InvalidOperationException(
+                "Ollama:BaseUrl configuration is missing.");
+
+        var ollamaTimeout = configuration.GetValue<int>(
+            "Ollama:TimeoutSeconds",
+            120);
+
+        services.AddHttpClient<IFailureAnalysisService, OllamaFailureAnalysisService>(
+            client =>
+            {
+                client.BaseAddress = new Uri(ollamaBaseUrl);
+                client.Timeout = TimeSpan.FromSeconds(ollamaTimeout);
+            });
 
         // Loki
         services.AddHttpClient<ILokiLogRepository, LokiLogRepository>(
