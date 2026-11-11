@@ -140,6 +140,9 @@ namespace IntelligentMonitoring.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("Environment")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -163,11 +166,27 @@ namespace IntelligentMonitoring.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("InvestigationStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("LastAttemptAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("NextRetryAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset>("OccurredAtUtc")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset>("ProcessedAtUtc")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("RetryCount")
+                        .HasColumnType("int");
 
                     b.Property<string>("ServiceName")
                         .IsRequired()

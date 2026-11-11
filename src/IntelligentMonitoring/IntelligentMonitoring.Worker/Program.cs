@@ -3,6 +3,7 @@ using IntelligentMonitoring.Application.Abstractions.Logging;
 using IntelligentMonitoring.Application.Services.Investigations;
 using IntelligentMonitoring.Application.Services.Logging;
 using IntelligentMonitoring.Infrastructure;
+using IntelligentMonitoring.Worker.Investigations;
 using IntelligentMonitoring.Worker.Messaging.Kafka;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -22,6 +23,8 @@ builder.Services.AddScoped<
 
 // Background workers.
 builder.Services.AddHostedService<KafkaFailureConsumer>();
+
+builder.Services.AddHostedService<FailureInvestigationWorker>();
 
 var host = builder.Build();
 

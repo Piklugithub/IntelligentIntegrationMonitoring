@@ -21,7 +21,7 @@ public sealed class LokiLogRepository(HttpClient httpClient, ILogger<LokiLogRepo
         DateTimeOffset startTime,
         DateTimeOffset endTime,
         CancellationToken cancellationToken = default)
-    {
+     {
         ArgumentException.ThrowIfNullOrWhiteSpace(transactionId);
 
         var query =

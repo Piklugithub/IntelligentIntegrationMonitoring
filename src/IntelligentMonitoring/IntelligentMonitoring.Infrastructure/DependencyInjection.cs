@@ -55,6 +55,10 @@ public static class DependencyInjection
             IFailureInvestigationRepository,
             FailureInvestigationRepository>();
 
+        services.AddScoped<
+            IFailureEventRepository,
+            FailureEventRepository>();
+
         return services;
     }
 }

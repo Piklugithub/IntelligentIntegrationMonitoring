@@ -71,6 +71,6 @@ docker exec -it iim-kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-s
 
 DataBase Migration 
 
-Add-Migration InitialMonitoringSchema -Project IntelligentMonitoring.Infrastructure -StartupProject IntelligentMonitoring.Worker -OutputDir Persistence/Migrations
+Add-Migration UpdateIntegrationFailureEntity -Project IntelligentMonitoring.Infrastructure -StartupProject IntelligentMonitoring.Worker -OutputDir Persistence/Migrations
 
 Update-Database -Project IntelligentMonitoring.Infrastructure -StartupProject IntelligentMonitoring.Worker
