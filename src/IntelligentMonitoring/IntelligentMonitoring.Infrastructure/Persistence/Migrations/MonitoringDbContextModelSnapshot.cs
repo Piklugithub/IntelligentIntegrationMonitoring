@@ -28,6 +28,46 @@ namespace IntelligentMonitoring.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("AiAnalysisStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset?>("AiAnalyzedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("AiBusinessImpact")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AiFailureStage")
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<string>("AiInformationGapsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AiModelName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("AiProbableRootCause")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AiRecommendedActionsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AiRootCauseConfidence")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("AiSummary")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AiSupportingEvidenceJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
 

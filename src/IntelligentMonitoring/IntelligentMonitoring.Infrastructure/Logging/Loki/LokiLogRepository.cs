@@ -4,10 +4,11 @@ using System.Text.Json;
 using IntelligentMonitoring.Application.Abstractions.Logging;
 using IntelligentMonitoring.Application.Models.Logging;
 using IntelligentMonitoring.Infrastructure.Logging.Loki.Models;
+using Microsoft.Extensions.Logging;
 
 namespace IntelligentMonitoring.Infrastructure.Logging.Loki;
 
-public sealed class LokiLogRepository(HttpClient httpClient)
+public sealed class LokiLogRepository(HttpClient httpClient, ILogger<LokiLogRepository> _logger)
     : ILokiLogRepository
 {
     private const int DefaultLimit = 1000;
@@ -66,22 +67,52 @@ public sealed class LokiLogRepository(HttpClient httpClient)
                 "Start time must be earlier than end time.");
         }
 
+        // Loki expects timestamps in Unix nanoseconds.
+        var startNanoseconds =
+            startTime.ToUnixTimeMilliseconds() * 1_000_000;
+
+        var endNanoseconds =
+            endTime.ToUnixTimeMilliseconds() * 1_000_000;
+
         var queryString =
             $"query={Uri.EscapeDataString(query)}" +
-            $"&start={startTime.ToUnixTimeMilliseconds() * 1_000_000}" +
-            $"&end={endTime.ToUnixTimeMilliseconds() * 1_000_000}" +
+            $"&start={startNanoseconds}" +
+            $"&end={endNanoseconds}" +
             $"&limit={limit}" +
             "&direction=backward";
+
+        _logger.LogInformation(
+            """
+            Sending Loki query.
+            Query: {Query}
+            Start UTC: {Start}
+            End UTC: {End}
+            Start Nanoseconds: {StartNanoseconds}
+            End Nanoseconds: {EndNanoseconds}
+            """,
+            query,
+            startTime,
+            endTime,
+            startNanoseconds,
+            endNanoseconds);
 
         using var response = await httpClient.GetAsync(
             $"loki/api/v1/query_range?{queryString}",
             cancellationToken);
 
-        var responseContent = await response.Content.ReadAsStringAsync(
-            cancellationToken);
+        var responseContent =
+            await response.Content.ReadAsStringAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Loki HTTP response status: {StatusCode}",
+            (int)response.StatusCode);
 
         if (!response.IsSuccessStatusCode)
         {
+            _logger.LogError(
+                "Loki request failed. Response: {Response}",
+                responseContent);
+
             throw new HttpRequestException(
                 $"Loki request failed. Status: {(int)response.StatusCode}. " +
                 $"Response: {responseContent}");
@@ -111,6 +142,10 @@ public sealed class LokiLogRepository(HttpClient httpClient)
 
         if (lokiResponse.Data?.Result is null)
         {
+            _logger.LogWarning(
+                "Loki returned no result streams for query: {Query}",
+                query);
+
             return entries;
         }
 
@@ -128,6 +163,10 @@ public sealed class LokiLogRepository(HttpClient httpClient)
                         stream.Stream));
             }
         }
+
+        _logger.LogInformation(
+            "Loki query completed. Returned {LogCount} log entries.",
+            entries.Count);
 
         return entries;
     }

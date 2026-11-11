@@ -1,4 +1,5 @@
-﻿namespace IntelligentMonitoring.Infrastructure.Persistence.Entities;
+﻿
+namespace IntelligentMonitoring.Infrastructure.Persistence.Entities;
 
 public sealed class FailureInvestigationEntity
 {
@@ -6,6 +7,7 @@ public sealed class FailureInvestigationEntity
 
     public Guid EventId { get; set; }
 
+    // Deterministic investigation
     public string Status { get; set; } = string.Empty;
 
     public bool HasLogs { get; set; }
@@ -36,6 +38,30 @@ public sealed class FailureInvestigationEntity
 
     public string TimelineJson { get; set; } = "[]";
 
+    // AI investigation
+    public string? AiSummary { get; set; }
+
+    public string? AiFailureStage { get; set; }
+
+    public string? AiProbableRootCause { get; set; }
+
+    public string? AiRootCauseConfidence { get; set; }
+
+    public string? AiBusinessImpact { get; set; }
+
+    public string AiSupportingEvidenceJson { get; set; } = "[]";
+
+    public string AiRecommendedActionsJson { get; set; } = "[]";
+
+    public string AiInformationGapsJson { get; set; } = "[]";
+
+    public string? AiAnalysisStatus { get; set; }
+
+    public string? AiModelName { get; set; }
+
+    public DateTimeOffset? AiAnalyzedAtUtc { get; set; }
+
+    // Persistence metadata
     public DateTimeOffset CreatedAtUtc { get; set; }
 
     public IntegrationFailureEntity? Failure { get; set; }

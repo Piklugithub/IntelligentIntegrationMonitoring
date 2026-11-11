@@ -21,6 +21,7 @@ public sealed class FailureInvestigationRecord
     public string ErrorCode { get; set; } = string.Empty;
 
     public string ErrorMessage { get; set; } = string.Empty;
+    public FailureAnalysisResult? AiAnalysis { get; set; }
 
     public TransactionInvestigationReport Investigation { get; set; } = new();
 }

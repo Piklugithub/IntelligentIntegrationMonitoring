@@ -69,5 +69,8 @@ You can inspect messages from the topic using a console consumer.
 Open another PowerShell terminal:
 docker exec -it iim-kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic integration.failures --from-beginning
 
+DataBase Migration 
 
-This displays messages from the beginning of the topic. Press Ctrl + C to exit.
+Add-Migration InitialMonitoringSchema -Project IntelligentMonitoring.Infrastructure -StartupProject IntelligentMonitoring.Worker -OutputDir Persistence/Migrations
+
+Update-Database -Project IntelligentMonitoring.Infrastructure -StartupProject IntelligentMonitoring.Worker

@@ -60,6 +60,33 @@ public sealed class KafkaFailureConsumer(
             topic,
             consumerGroup);
 
+        // Read investigation settings.
+        var lookbackHours =
+            configuration.GetValue<int>(
+                "Investigation:LookbackHours", 24);
+
+        var postFailureBufferMinutes =
+            configuration.GetValue<int>(
+                "Investigation:PostFailureBufferMinutes", 15);
+
+        if (lookbackHours <= 0 || lookbackHours > 168)
+        {
+            throw new InvalidOperationException(
+                "Investigation LookbackHours must be between 1 and 168.");
+        }
+
+        if (postFailureBufferMinutes < 0 ||
+            postFailureBufferMinutes > 1440)
+        {
+            throw new InvalidOperationException(
+                "Investigation PostFailureBufferMinutes must be between 0 and 1440.");
+        }
+
+        logger.LogInformation(
+            "Investigation configuration loaded. LookbackHours: {LookbackHours}, PostFailureBufferMinutes: {BufferMinutes}",
+            lookbackHours,
+            postFailureBufferMinutes);
+
         while (!stoppingToken.IsCancellationRequested)
         {
             ConsumeResult<string, string>? result = null;
@@ -119,14 +146,13 @@ public sealed class KafkaFailureConsumer(
                         "Failure event does not contain a valid OccurredAtUtc.");
                 }
 
-                logger.LogError(
-                    "Failure event received. EventId: {EventId}, TransactionId: {TransactionId}, TraceId: {TraceId}, Service: {ServiceName}, ErrorCode: {ErrorCode}, Message: {ErrorMessage}",
+                logger.LogWarning(
+                    "Failure event received. EventId: {EventId}, TransactionId: {TransactionId}, TraceId: {TraceId}, Service: {ServiceName}, ErrorCode: {ErrorCode}",
                     failureEvent.EventId,
                     failureEvent.TransactionId,
                     failureEvent.TraceId,
                     failureEvent.ServiceName,
-                    failureEvent.ErrorCode,
-                    failureEvent.ErrorMessage);
+                    failureEvent.ErrorCode);
 
                 // 4. Create an asynchronous DI scope.
                 await using var scope =
@@ -136,17 +162,37 @@ public sealed class KafkaFailureConsumer(
                     scope.ServiceProvider
                         .GetRequiredService<IFailureInvestigationService>();
 
+                var failureAnalysisService =
+                    scope.ServiceProvider
+                        .GetRequiredService<IFailureAnalysisService>();
+
                 var persistenceRepository =
                     scope.ServiceProvider
                         .GetRequiredService<IFailureInvestigationRepository>();
 
-                // 5. Define the investigation time window.
+                // 5. Calculate the investigation time window.
                 var startTime =
-                    failureEvent.OccurredAtUtc.AddMinutes(-15);
+                    failureEvent.OccurredAtUtc.AddHours(-lookbackHours);
 
                 var endTime = Max(
                     DateTimeOffset.UtcNow,
-                    failureEvent.OccurredAtUtc.AddMinutes(15));
+                    failureEvent.OccurredAtUtc.AddMinutes(
+                        postFailureBufferMinutes));
+
+                logger.LogInformation(
+                    """
+                    Investigation time window calculated.
+                    EventId: {EventId}
+                    TransactionId: {TransactionId}
+                    Event OccurredAtUtc: {OccurredAtUtc}
+                    Investigation Start UTC: {StartTime}
+                    Investigation End UTC: {EndTime}
+                    """,
+                    failureEvent.EventId,
+                    failureEvent.TransactionId,
+                    failureEvent.OccurredAtUtc,
+                    startTime,
+                    endTime);
 
                 // 6. Investigate the transaction using Loki.
                 var report =
@@ -156,15 +202,15 @@ public sealed class KafkaFailureConsumer(
                         endTime,
                         stoppingToken);
 
-                // 7. Log the investigation summary.
                 logger.LogInformation(
                     """
-                    Transaction investigation completed.
+                    Deterministic investigation completed.
                     EventId: {EventId}
                     TransactionId: {TransactionId}
                     Status: {Status}
+                    HasLogs: {HasLogs}
+                    HasFailures: {HasFailures}
                     TotalLogs: {TotalLogs}
-                    InformationCount: {InformationCount}
                     WarningCount: {WarningCount}
                     ErrorCount: {ErrorCount}
                     FailureService: {FailureService}
@@ -174,15 +220,41 @@ public sealed class KafkaFailureConsumer(
                     failureEvent.EventId,
                     report.TransactionId,
                     report.Status,
+                    report.HasLogs,
+                    report.HasFailures,
                     report.TotalLogs,
-                    report.InformationCount,
                     report.WarningCount,
                     report.ErrorCount,
                     report.FailureServiceName,
                     report.ErrorCode,
                     string.Join(", ", report.ServicesInvolved));
 
-                // 8. Map event and investigation report to persistence model.
+                // 7. Analyze the deterministic report using Ollama.
+                logger.LogInformation(
+                    "Starting AI failure analysis. TransactionId: {TransactionId}",
+                    failureEvent.TransactionId);
+
+                var aiAnalysis =
+                    await failureAnalysisService.AnalyzeAsync(
+                        report,
+                        stoppingToken);
+
+                logger.LogInformation(
+                    """
+                    AI failure analysis completed.
+                    TransactionId: {TransactionId}
+                    AnalysisStatus: {AnalysisStatus}
+                    FailureStage: {FailureStage}
+                    RootCauseConfidence: {Confidence}
+                    ProbableRootCause: {RootCause}
+                    """,
+                    failureEvent.TransactionId,
+                    aiAnalysis.AnalysisStatus,
+                    aiAnalysis.FailureStage,
+                    aiAnalysis.RootCauseConfidence,
+                    aiAnalysis.ProbableRootCause);
+
+                // 8. Map event, deterministic report and AI result.
                 var record = new FailureInvestigationRecord
                 {
                     EventId = failureEvent.EventId,
@@ -195,20 +267,21 @@ public sealed class KafkaFailureConsumer(
                     TraceId = failureEvent.TraceId,
                     ErrorCode = failureEvent.ErrorCode,
                     ErrorMessage = failureEvent.ErrorMessage,
-                    Investigation = report
+                    Investigation = report,
+                    AiAnalysis = aiAnalysis
                 };
 
-                // 9. Persist failure event and investigation in SQL Server.
+                // 9. Persist both investigation results in SQL Server.
                 await persistenceRepository.SaveAsync(
                     record,
                     stoppingToken);
 
                 logger.LogInformation(
-                    "Failure investigation successfully saved to SQL Server. EventId: {EventId}, TransactionId: {TransactionId}",
+                    "Failure event and AI investigation successfully saved. EventId: {EventId}, TransactionId: {TransactionId}",
                     failureEvent.EventId,
                     failureEvent.TransactionId);
 
-                // 10. Commit Kafka offset only after successful persistence.
+                // 10. Commit only after successful persistence.
                 consumer.Commit(result);
 
                 logger.LogInformation(
@@ -251,14 +324,14 @@ public sealed class KafkaFailureConsumer(
                     result?.Partition,
                     result?.Offset);
 
-                // Stop the worker so that a later offset is not
-                // accidentally committed past this failed message.
+                // Do not commit failed messages.
+                // Stop the worker to prevent later offsets
+                // from being committed past this message.
                 throw;
             }
         }
 
-        logger.LogInformation(
-            "Kafka consumer is stopping.");
+        logger.LogInformation("Kafka consumer is stopping.");
     }
 
     private static DateTimeOffset Max(

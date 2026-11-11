@@ -7,7 +7,8 @@ using IntelligentMonitoring.Worker.Messaging.Kafka;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Infrastructure dependencies.
+// Infrastructure dependencies:
+// Loki, SQL Server, persistence repository and Ollama.
 builder.Services.AddInfrastructure(builder.Configuration);
 
 // Application services.
@@ -21,7 +22,7 @@ builder.Services.AddScoped<
 
 // Background workers.
 builder.Services.AddHostedService<KafkaFailureConsumer>();
-builder.Services.AddInfrastructure(builder.Configuration);
+
 var host = builder.Build();
 
 await host.RunAsync();

@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿
+using System.Text.Json;
 using IntelligentMonitoring.Application.Abstractions.Investigations;
 using IntelligentMonitoring.Application.Models.Investigations;
 using IntelligentMonitoring.Infrastructure.Persistence.Entities;
@@ -41,11 +42,14 @@ public sealed class FailureInvestigationRepository(
         };
 
         var report = record.Investigation;
+        var ai = record.AiAnalysis;
 
         var investigation = new FailureInvestigationEntity
         {
             Id = Guid.NewGuid(),
             EventId = record.EventId,
+
+            // Deterministic investigation
             Status = report.Status,
             HasLogs = report.HasLogs,
             HasFailures = report.HasFailures,
@@ -59,10 +63,33 @@ public sealed class FailureInvestigationRepository(
             FailureServiceName = report.FailureServiceName,
             ErrorCode = report.ErrorCode,
             FailureMessage = report.FailureMessage,
+
             ServicesInvolvedJson =
                 JsonSerializer.Serialize(report.ServicesInvolved),
+
             TimelineJson =
                 JsonSerializer.Serialize(report.Timeline),
+
+            // AI investigation
+            AiSummary = ai?.Summary,
+            AiFailureStage = ai?.FailureStage,
+            AiProbableRootCause = ai?.ProbableRootCause,
+            AiRootCauseConfidence = ai?.RootCauseConfidence,
+            AiBusinessImpact = ai?.BusinessImpact,
+
+            AiSupportingEvidenceJson =
+                JsonSerializer.Serialize(ai?.SupportingEvidence ?? []),
+
+            AiRecommendedActionsJson =
+                JsonSerializer.Serialize(ai?.RecommendedActions ?? []),
+
+            AiInformationGapsJson =
+                JsonSerializer.Serialize(ai?.InformationGaps ?? []),
+
+            AiAnalysisStatus = ai?.AnalysisStatus,
+            AiModelName = ai?.ModelName,
+            AiAnalyzedAtUtc = ai?.AnalyzedAtUtc,
+
             CreatedAtUtc = DateTimeOffset.UtcNow
         };
 

@@ -53,6 +53,7 @@ public sealed class MonitoringDbContext(
             entity.HasIndex(x => x.ServiceName);
         });
 
+
         modelBuilder.Entity<FailureInvestigationEntity>(entity =>
         {
             entity.ToTable("FailureInvestigations");
@@ -80,11 +81,43 @@ public sealed class MonitoringDbContext(
             entity.Property(x => x.TimelineJson)
                 .HasColumnType("nvarchar(max)");
 
+            // AI analysis configuration
+            entity.Property(x => x.AiSummary)
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(x => x.AiFailureStage)
+                .HasMaxLength(250);
+
+            entity.Property(x => x.AiProbableRootCause)
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(x => x.AiRootCauseConfidence)
+                .HasMaxLength(30);
+
+            entity.Property(x => x.AiBusinessImpact)
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(x => x.AiSupportingEvidenceJson)
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(x => x.AiRecommendedActionsJson)
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(x => x.AiInformationGapsJson)
+                .HasColumnType("nvarchar(max)");
+
+            entity.Property(x => x.AiAnalysisStatus)
+                .HasMaxLength(50);
+
+            entity.Property(x => x.AiModelName)
+                .HasMaxLength(100);
+
             entity.HasOne(x => x.Failure)
                 .WithOne(x => x.Investigation)
                 .HasForeignKey<FailureInvestigationEntity>(
                     x => x.EventId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+
     }
 }
