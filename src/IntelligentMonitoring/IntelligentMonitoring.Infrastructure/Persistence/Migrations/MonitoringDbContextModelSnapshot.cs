@@ -176,6 +176,9 @@ namespace IntelligentMonitoring.Infrastructure.Persistence.Migrations
                     b.Property<string>("LastError")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid?>("LeaseId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset?>("NextRetryAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -183,6 +186,9 @@ namespace IntelligentMonitoring.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset>("ProcessedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("ProcessingLeaseExpiresAtUtc")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<int>("RetryCount")

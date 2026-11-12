@@ -42,6 +42,8 @@ public sealed class FailureEventRepository(
             RetryCount = 0,
             NextRetryAtUtc = now,
             LastAttemptAtUtc = null,
+            ProcessingLeaseExpiresAtUtc = null,
+            LeaseId = null,
             LastError = null,
             CompletedAtUtc = null,
 
@@ -67,10 +69,18 @@ public sealed class FailureEventRepository(
         var events = await dbContext.IntegrationFailures
             .AsNoTracking()
             .Where(x =>
-                (x.InvestigationStatus == "Pending" ||
-                 x.InvestigationStatus == "Retrying") &&
-                (x.NextRetryAtUtc == null ||
-                 x.NextRetryAtUtc <= now))
+                (
+                    (x.InvestigationStatus == "Pending" ||
+                     x.InvestigationStatus == "Retrying") &&
+                    (x.NextRetryAtUtc == null ||
+                     x.NextRetryAtUtc <= now)
+                )
+                ||
+                (
+                    x.InvestigationStatus == "Processing" &&
+                    x.ProcessingLeaseExpiresAtUtc != null &&
+                    x.ProcessingLeaseExpiresAtUtc <= now
+                ))
             .OrderBy(x => x.NextRetryAtUtc)
             .ThenBy(x => x.ProcessedAtUtc)
             .Take(batchSize)
@@ -93,19 +103,39 @@ public sealed class FailureEventRepository(
         return events;
     }
 
-    public async Task<bool> MarkProcessingAsync(
+    public async Task<Guid?> MarkProcessingAsync(
         Guid eventId,
+        DateTimeOffset leaseExpiresAtUtc,
         CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
 
+        if (leaseExpiresAtUtc <= now)
+        {
+            throw new ArgumentException(
+                "Lease expiry must be in the future.",
+                nameof(leaseExpiresAtUtc));
+        }
+
+        var leaseId = Guid.NewGuid();
+
         var affectedRows = await dbContext.IntegrationFailures
             .Where(x =>
                 x.EventId == eventId &&
-                (x.InvestigationStatus == "Pending" ||
-                 x.InvestigationStatus == "Retrying") &&
-                (x.NextRetryAtUtc == null ||
-                 x.NextRetryAtUtc <= now))
+                (
+                    (
+                        (x.InvestigationStatus == "Pending" ||
+                         x.InvestigationStatus == "Retrying") &&
+                        (x.NextRetryAtUtc == null ||
+                         x.NextRetryAtUtc <= now)
+                    )
+                    ||
+                    (
+                        x.InvestigationStatus == "Processing" &&
+                        x.ProcessingLeaseExpiresAtUtc != null &&
+                        x.ProcessingLeaseExpiresAtUtc <= now
+                    )
+                ))
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(
@@ -116,14 +146,24 @@ public sealed class FailureEventRepository(
                         now)
                     .SetProperty(
                         x => x.NextRetryAtUtc,
-                        (DateTimeOffset?)null),
+                        (DateTimeOffset?)null)
+                    .SetProperty(
+                        x => x.ProcessingLeaseExpiresAtUtc,
+                        leaseExpiresAtUtc)
+                    .SetProperty(
+                        x => x.LeaseId,
+                        leaseId)
+                .SetProperty(
+                    x => x.CompletedAtUtc,
+                    (DateTimeOffset?)null),
                 cancellationToken);
 
-        return affectedRows == 1;
+        return affectedRows == 1 ? leaseId : null;
     }
 
     public async Task ScheduleRetryAsync(
         Guid eventId,
+        Guid leaseId,
         DateTimeOffset nextRetryAtUtc,
         string? lastError,
         CancellationToken cancellationToken = default)
@@ -131,7 +171,8 @@ public sealed class FailureEventRepository(
         var affectedRows = await dbContext.IntegrationFailures
             .Where(x =>
                 x.EventId == eventId &&
-                x.InvestigationStatus == "Processing")
+                x.InvestigationStatus == "Processing" &&
+                x.LeaseId == leaseId)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(
@@ -145,14 +186,24 @@ public sealed class FailureEventRepository(
                         nextRetryAtUtc)
                     .SetProperty(
                         x => x.LastError,
-                        lastError),
+                        lastError)
+                    .SetProperty(
+                        x => x.ProcessingLeaseExpiresAtUtc,
+                        (DateTimeOffset?)null)
+                    .SetProperty(
+                        x => x.LeaseId,
+                        (Guid?)null),
                 cancellationToken);
 
-        EnsureOneRowUpdated(affectedRows, eventId, "schedule retry");
+        EnsureOneRowUpdated(
+            affectedRows,
+            eventId,
+            "schedule retry");
     }
 
     public async Task MarkNoLogsFoundAsync(
         Guid eventId,
+        Guid leaseId,
         string? lastError,
         CancellationToken cancellationToken = default)
     {
@@ -161,7 +212,8 @@ public sealed class FailureEventRepository(
         var affectedRows = await dbContext.IntegrationFailures
             .Where(x =>
                 x.EventId == eventId &&
-                x.InvestigationStatus == "Processing")
+                x.InvestigationStatus == "Processing" &&
+                x.LeaseId == leaseId)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(
@@ -175,14 +227,24 @@ public sealed class FailureEventRepository(
                         lastError)
                     .SetProperty(
                         x => x.CompletedAtUtc,
-                        now),
+                        now)
+                    .SetProperty(
+                        x => x.ProcessingLeaseExpiresAtUtc,
+                        (DateTimeOffset?)null)
+                    .SetProperty(
+                        x => x.LeaseId,
+                        (Guid?)null),
                 cancellationToken);
 
-        EnsureOneRowUpdated(affectedRows, eventId, "mark no logs found");
+        EnsureOneRowUpdated(
+            affectedRows,
+            eventId,
+            "mark no logs found");
     }
 
     public async Task MarkFailedAsync(
         Guid eventId,
+        Guid leaseId,
         string lastError,
         CancellationToken cancellationToken = default)
     {
@@ -191,7 +253,8 @@ public sealed class FailureEventRepository(
         var affectedRows = await dbContext.IntegrationFailures
             .Where(x =>
                 x.EventId == eventId &&
-                x.InvestigationStatus == "Processing")
+                x.InvestigationStatus == "Processing" &&
+                x.LeaseId == leaseId)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(
@@ -205,10 +268,19 @@ public sealed class FailureEventRepository(
                         lastError)
                     .SetProperty(
                         x => x.CompletedAtUtc,
-                        now),
+                        now)
+                    .SetProperty(
+                        x => x.ProcessingLeaseExpiresAtUtc,
+                        (DateTimeOffset?)null)
+                    .SetProperty(
+                        x => x.LeaseId,
+                        (Guid?)null),
                 cancellationToken);
 
-        EnsureOneRowUpdated(affectedRows, eventId, "mark failed");
+        EnsureOneRowUpdated(
+            affectedRows,
+            eventId,
+            "mark failed");
     }
 
     private static void EnsureOneRowUpdated(
@@ -220,7 +292,8 @@ public sealed class FailureEventRepository(
         {
             throw new InvalidOperationException(
                 $"Could not {operation} for EventId {eventId}. " +
-                $"Expected one updated row, but found {affectedRows}.");
+                $"Expected one updated row, but found {affectedRows}. " +
+                "The event may no longer be owned by this worker.");
         }
     }
 }

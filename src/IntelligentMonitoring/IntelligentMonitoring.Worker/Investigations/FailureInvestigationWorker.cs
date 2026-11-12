@@ -41,12 +41,16 @@ public sealed class FailureInvestigationWorker(
         var maxRetries = configuration.GetValue<int>(
             "Investigation:MaxRetries", 5);
 
+        var processingLeaseMinutes = configuration.GetValue<int>(
+            "Investigation:ProcessingLeaseMinutes", 5);
+
         ValidateConfiguration(
             pollingInterval,
             batchSize,
             lookbackHours,
             postFailureBufferMinutes,
-            maxRetries);
+            maxRetries,
+            processingLeaseMinutes);
 
         logger.LogInformation(
             """
@@ -56,17 +60,18 @@ public sealed class FailureInvestigationWorker(
             LookbackHours: {LookbackHours}
             PostFailureBufferMinutes: {BufferMinutes}
             MaxRetries: {MaxRetries}
+            ProcessingLeaseMinutes: {LeaseMinutes}
             """,
             pollingInterval,
             batchSize,
             lookbackHours,
             postFailureBufferMinutes,
-            maxRetries);
+            maxRetries,
+            processingLeaseMinutes);
 
         using var timer = new PeriodicTimer(
             TimeSpan.FromSeconds(pollingInterval));
 
-        // Run immediately at startup.
         do
         {
             try
@@ -76,6 +81,7 @@ public sealed class FailureInvestigationWorker(
                     lookbackHours,
                     postFailureBufferMinutes,
                     maxRetries,
+                    processingLeaseMinutes,
                     stoppingToken);
             }
             catch (OperationCanceledException)
@@ -103,8 +109,7 @@ public sealed class FailureInvestigationWorker(
 
         } while (!stoppingToken.IsCancellationRequested);
 
-        logger.LogInformation(
-            "Failure investigation worker stopped.");
+        logger.LogInformation("Failure investigation worker stopped.");
     }
 
     private async Task ProcessDueEventsAsync(
@@ -112,6 +117,7 @@ public sealed class FailureInvestigationWorker(
         int lookbackHours,
         int postFailureBufferMinutes,
         int maxRetries,
+        int processingLeaseMinutes,
         CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
@@ -136,22 +142,33 @@ public sealed class FailureInvestigationWorker(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Only one worker execution can claim an eligible event.
-            var claimed = await eventRepository.MarkProcessingAsync(
+            var leaseExpiresAtUtc =
+                DateTimeOffset.UtcNow.AddMinutes(processingLeaseMinutes);
+
+            // Atomically claim the event and receive its ownership token.
+            var leaseId = await eventRepository.MarkProcessingAsync(
                 workItem.EventId,
+                leaseExpiresAtUtc,
                 cancellationToken);
 
-            if (!claimed)
+            if (leaseId is null)
             {
-                logger.LogDebug(
-                    "Event was already claimed or is no longer due. EventId: {EventId}",
+                logger.LogInformation(
+                    "Event {EventId} was not claimed. It may already be processing.",
                     workItem.EventId);
 
                 continue;
             }
 
+            logger.LogInformation(
+                "Event claimed successfully. EventId: {EventId}, LeaseId: {LeaseId}, LeaseExpiresAtUtc: {LeaseExpiresAtUtc}",
+                workItem.EventId,
+                leaseId.Value,
+                leaseExpiresAtUtc);
+
             await ProcessSingleEventAsync(
                 workItem,
+                leaseId.Value,
                 lookbackHours,
                 postFailureBufferMinutes,
                 maxRetries,
@@ -161,15 +178,17 @@ public sealed class FailureInvestigationWorker(
 
     private async Task ProcessSingleEventAsync(
         FailureEventWorkItem workItem,
+        Guid leaseId,
         int lookbackHours,
         int postFailureBufferMinutes,
         int maxRetries,
         CancellationToken cancellationToken)
     {
         logger.LogInformation(
-            "Starting investigation. EventId: {EventId}, TransactionId: {TransactionId}, RetryCount: {RetryCount}",
+            "Starting investigation. EventId: {EventId}, TransactionId: {TransactionId}, LeaseId: {LeaseId}, RetryCount: {RetryCount}",
             workItem.EventId,
             workItem.TransactionId,
+            leaseId,
             workItem.RetryCount);
 
         try
@@ -209,18 +228,17 @@ public sealed class FailureInvestigationWorker(
                 report.HasLogs,
                 report.TotalLogs);
 
-            // Logs may arrive after the Kafka event.
             if (!report.HasLogs)
             {
                 await HandleNoLogsAsync(
                     workItem,
+                    leaseId,
                     maxRetries,
                     cancellationToken);
 
                 return;
             }
 
-            // Analyze only when evidence is available.
             var aiAnalysis =
                 await failureAnalysisService.AnalyzeAsync(
                     report,
@@ -244,31 +262,37 @@ public sealed class FailureInvestigationWorker(
 
             await investigationRepository.SaveAsync(
                 record,
+                leaseId,
                 cancellationToken);
 
             logger.LogInformation(
-                "Investigation completed successfully. EventId: {EventId}, TransactionId: {TransactionId}",
+                "Investigation completed successfully. EventId: {EventId}, TransactionId: {TransactionId}, LeaseId: {LeaseId}",
                 workItem.EventId,
-                workItem.TransactionId);
+                workItem.TransactionId,
+                leaseId);
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
         {
-            // Do not convert application shutdown into a failed investigation.
-            // Recovery of abandoned Processing events will be implemented
-            // through a processing lease.
+            logger.LogWarning(
+                "Investigation interrupted. EventId: {EventId}, LeaseId: {LeaseId}. Recovery will be possible after lease expiry.",
+                workItem.EventId,
+                leaseId);
+
             throw;
         }
         catch (Exception ex)
         {
             logger.LogError(
                 ex,
-                "Investigation processing failed. EventId: {EventId}, TransactionId: {TransactionId}",
+                "Investigation processing failed. EventId: {EventId}, TransactionId: {TransactionId}, LeaseId: {LeaseId}",
                 workItem.EventId,
-                workItem.TransactionId);
+                workItem.TransactionId,
+                leaseId);
 
             await HandleProcessingErrorAsync(
                 workItem,
+                leaseId,
                 ex,
                 maxRetries,
                 cancellationToken);
@@ -277,6 +301,7 @@ public sealed class FailureInvestigationWorker(
 
     private async Task HandleNoLogsAsync(
         FailureEventWorkItem workItem,
+        Guid leaseId,
         int maxRetries,
         CancellationToken cancellationToken)
     {
@@ -293,12 +318,14 @@ public sealed class FailureInvestigationWorker(
         {
             await repository.MarkNoLogsFoundAsync(
                 workItem.EventId,
+                leaseId,
                 message,
                 cancellationToken);
 
             logger.LogWarning(
-                "Maximum retries exhausted. No logs found. EventId: {EventId}",
-                workItem.EventId);
+                "Maximum retries exhausted. No logs found. EventId: {EventId}, LeaseId: {LeaseId}",
+                workItem.EventId,
+                leaseId);
 
             return;
         }
@@ -308,6 +335,7 @@ public sealed class FailureInvestigationWorker(
 
         await repository.ScheduleRetryAsync(
             workItem.EventId,
+            leaseId,
             nextRetryAt,
             message,
             cancellationToken);
@@ -321,6 +349,7 @@ public sealed class FailureInvestigationWorker(
 
     private async Task HandleProcessingErrorAsync(
         FailureEventWorkItem workItem,
+        Guid leaseId,
         Exception exception,
         int maxRetries,
         CancellationToken cancellationToken)
@@ -335,12 +364,14 @@ public sealed class FailureInvestigationWorker(
         {
             await repository.MarkFailedAsync(
                 workItem.EventId,
+                leaseId,
                 exception.Message,
                 cancellationToken);
 
             logger.LogError(
-                "Maximum retries exhausted after processing errors. EventId: {EventId}",
-                workItem.EventId);
+                "Maximum retries exhausted after processing errors. EventId: {EventId}, LeaseId: {LeaseId}",
+                workItem.EventId,
+                leaseId);
 
             return;
         }
@@ -350,6 +381,7 @@ public sealed class FailureInvestigationWorker(
 
         await repository.ScheduleRetryAsync(
             workItem.EventId,
+            leaseId,
             nextRetryAt,
             exception.Message,
             cancellationToken);
@@ -383,7 +415,8 @@ public sealed class FailureInvestigationWorker(
         int batchSize,
         int lookbackHours,
         int postFailureBufferMinutes,
-        int maxRetries)
+        int maxRetries,
+        int processingLeaseMinutes)
     {
         if (pollingInterval <= 0 || pollingInterval > 300)
             throw new InvalidOperationException(
@@ -405,5 +438,10 @@ public sealed class FailureInvestigationWorker(
         if (maxRetries < 0 || maxRetries > 5)
             throw new InvalidOperationException(
                 "MaxRetries must be between 0 and 5.");
+
+        if (processingLeaseMinutes < 1 ||
+            processingLeaseMinutes > 60)
+            throw new InvalidOperationException(
+                "ProcessingLeaseMinutes must be between 1 and 60.");
     }
 }

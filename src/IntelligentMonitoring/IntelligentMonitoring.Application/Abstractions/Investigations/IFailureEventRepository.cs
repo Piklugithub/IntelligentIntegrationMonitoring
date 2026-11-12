@@ -15,23 +15,27 @@ public interface IFailureEventRepository
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
 
-    Task<bool> MarkProcessingAsync(
+    Task<Guid?> MarkProcessingAsync(
         Guid eventId,
+        DateTimeOffset leaseExpiresAtUtc,
         CancellationToken cancellationToken = default);
 
     Task ScheduleRetryAsync(
         Guid eventId,
+        Guid leaseId,
         DateTimeOffset nextRetryAtUtc,
         string? lastError,
         CancellationToken cancellationToken = default);
 
     Task MarkNoLogsFoundAsync(
         Guid eventId,
+        Guid leaseId,
         string? lastError,
         CancellationToken cancellationToken = default);
 
     Task MarkFailedAsync(
         Guid eventId,
+        Guid leaseId,
         string lastError,
         CancellationToken cancellationToken = default);
 }

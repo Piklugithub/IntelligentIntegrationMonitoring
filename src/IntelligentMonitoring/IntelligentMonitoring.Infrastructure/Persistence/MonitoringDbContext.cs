@@ -51,6 +51,7 @@ public sealed class MonitoringDbContext(
             entity.HasIndex(x => x.TraceId);
             entity.HasIndex(x => x.OccurredAtUtc);
             entity.HasIndex(x => x.ServiceName);
+            entity.Property(x => x.ProcessingLeaseExpiresAtUtc);
         });
 
 

@@ -36,8 +36,13 @@ public sealed class IntegrationFailureEntity
 
     public DateTimeOffset? CompletedAtUtc { get; set; }
 
+    public DateTimeOffset? ProcessingLeaseExpiresAtUtc { get; set; }
+
+    public Guid? LeaseId { get; set; }
+
     // Persistence metadata
     public DateTimeOffset ProcessedAtUtc { get; set; }
 
     public FailureInvestigationEntity? Investigation { get; set; }
+
 }
