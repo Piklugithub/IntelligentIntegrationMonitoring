@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\..\IntelligentMonitoring.Notification.Application\IntelligentMonitoring.Notification.Application.csproj" />
     <ProjectReference Include="..\IntelligentMonitoring.Application\IntelligentMonitoring.Application.csproj" />
     <ProjectReference Include="..\IntelligentMonitoring.Domain\IntelligentMonitoring.Domain.csproj" />
   </ItemGroup>

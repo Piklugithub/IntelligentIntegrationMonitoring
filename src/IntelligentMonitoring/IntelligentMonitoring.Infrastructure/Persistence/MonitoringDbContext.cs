@@ -1,4 +1,5 @@
-﻿using IntelligentMonitoring.Infrastructure.Persistence.Entities;
+﻿
+using IntelligentMonitoring.Infrastructure.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace IntelligentMonitoring.Infrastructure.Persistence;
@@ -12,6 +13,12 @@ public sealed class MonitoringDbContext(
 
     public DbSet<FailureInvestigationEntity> FailureInvestigations =>
         Set<FailureInvestigationEntity>();
+
+    public DbSet<NotificationDeliveryEntity> NotificationDeliveries =>
+        Set<NotificationDeliveryEntity>();
+
+    public DbSet<NotificationOutboxEntity> NotificationOutbox =>
+    Set<NotificationOutboxEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -51,9 +58,9 @@ public sealed class MonitoringDbContext(
             entity.HasIndex(x => x.TraceId);
             entity.HasIndex(x => x.OccurredAtUtc);
             entity.HasIndex(x => x.ServiceName);
+
             entity.Property(x => x.ProcessingLeaseExpiresAtUtc);
         });
-
 
         modelBuilder.Entity<FailureInvestigationEntity>(entity =>
         {
@@ -118,6 +125,85 @@ public sealed class MonitoringDbContext(
                 .HasForeignKey<FailureInvestigationEntity>(
                     x => x.EventId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Notification delivery configuration
+        modelBuilder.Entity<NotificationDeliveryEntity>(entity =>
+        {
+            entity.ToTable("NotificationDeliveries");
+
+            entity.HasKey(x => x.Id);
+
+            entity.Property(x => x.IdempotencyKey)
+                .HasMaxLength(300)
+                .IsRequired();
+
+            entity.HasIndex(x => x.IdempotencyKey)
+                .IsUnique();
+
+            entity.Property(x => x.Channel)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(x => x.Destination)
+                .HasMaxLength(500)
+                .IsRequired();
+
+            entity.Property(x => x.PayloadJson)
+                .HasColumnType("nvarchar(max)")
+                .IsRequired();
+
+            entity.Property(x => x.Status)
+                .HasMaxLength(30)
+                .IsRequired();
+
+            entity.Property(x => x.ExternalMessageId)
+                .HasMaxLength(500);
+
+            entity.Property(x => x.LastError)
+                .HasMaxLength(4000);
+
+            entity.HasIndex(x => x.EventId);
+
+            entity.HasIndex(x => new
+            {
+                x.Status,
+                x.NextAttemptAtUtc
+            });
+        });
+
+
+        modelBuilder.Entity<NotificationOutboxEntity>(entity =>
+        {
+            entity.ToTable("NotificationOutbox");
+
+            entity.HasKey(x => x.Id);
+
+            entity.Property(x => x.IdempotencyKey)
+                .HasMaxLength(250)
+                .IsRequired();
+
+            entity.HasIndex(x => x.IdempotencyKey)
+                .IsUnique();
+
+            entity.Property(x => x.PayloadJson)
+                .HasColumnType("nvarchar(max)")
+                .IsRequired();
+
+            entity.Property(x => x.Status)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(x => x.LastError)
+                .HasMaxLength(4000);
+
+            entity.HasIndex(x => new
+            {
+                x.Status,
+                x.NextAttemptAtUtc
+            });
+
+            entity.HasIndex(x => x.EventId);
         });
 
     }

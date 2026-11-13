@@ -6,6 +6,10 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="IntelligentMonitoring.Contracts/IntelligentMonitoring.Contracts.csproj" Id="ba4f0c99-7877-4b20-9f66-6546a19ad4b8" />
+    <Project Path="src/IntelligentMonitoring.Notification.Application/IntelligentMonitoring.Notification.Application.csproj" />
+    <Project Path="src/IntelligentMonitoring.Notification.Contracts/IntelligentMonitoring.Notification.Contracts.csproj" />
+    <Project Path="src/IntelligentMonitoring.Notification.Infrastructure/IntelligentMonitoring.Notification.Infrastructure.csproj" />
+    <Project Path="src/IntelligentMonitoring.Notification.Worker/IntelligentMonitoring.Notification.Worker.csproj" />
   </Folder>
   <Folder Name="/src/IntelligentMonitoring/">
     <Project Path="src/IntelligentMonitoring/IntelligentMonitoring.Api/IntelligentMonitoring.Api.csproj" />
