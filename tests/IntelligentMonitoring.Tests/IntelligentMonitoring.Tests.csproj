@@ -21,6 +21,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\IntelligentMonitoring.Notification.Application\IntelligentMonitoring.Notification.Application.csproj" />
+    <ProjectReference Include="..\..\src\IntelligentMonitoring.Notification.Contracts\IntelligentMonitoring.Notification.Contracts.csproj" />
     <ProjectReference Include="..\..\src\IntelligentMonitoring\IntelligentMonitoring.Application\IntelligentMonitoring.Application.csproj" />
     <ProjectReference Include="..\..\src\IntelligentMonitoring\IntelligentMonitoring.Infrastructure\IntelligentMonitoring.Infrastructure.csproj" />
   </ItemGroup>

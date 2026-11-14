@@ -3,6 +3,7 @@ using System.Text.Json;
 using IntelligentMonitoring.Application.Abstractions.Investigations;
 using IntelligentMonitoring.Application.Models.Investigations;
 using IntelligentMonitoring.Infrastructure.Persistence.Entities;
+using IntelligentMonitoring.Notification.Contracts.Events;
 using Microsoft.EntityFrameworkCore;
 
 namespace IntelligentMonitoring.Infrastructure.Persistence;
@@ -36,8 +37,6 @@ public sealed class FailureInvestigationRepository(
             var now = DateTimeOffset.UtcNow;
 
             // Validate ownership and lock the eligible event row.
-            // Serializable isolation protects this validation and save
-            // from a competing transaction taking over the event.
             var failure = await dbContext.IntegrationFailures
                 .Include(x => x.Investigation)
                 .FirstOrDefaultAsync(
@@ -115,6 +114,41 @@ public sealed class FailureInvestigationRepository(
             investigation.AiModelName = ai?.ModelName;
             investigation.AiAnalyzedAtUtc = ai?.AnalyzedAtUtc;
 
+            // Create the notification event.
+            var completedEvent = new InvestigationCompletedEvent
+            {
+                EventId = record.EventId,
+                TransactionId = record.TransactionId,
+                TraceId = record.TraceId,
+                ServiceName = record.ServiceName,
+                Environment = record.Environment,
+                IntegrationType = record.IntegrationType,
+                InvestigationStatus = "Completed",
+                ErrorCode = record.ErrorCode ?? report.ErrorCode,
+                ErrorMessage = record.ErrorMessage ?? report.FailureMessage,
+                AiSummary = ai?.Summary,
+                AiProbableRootCause = ai?.ProbableRootCause,
+                AiBusinessImpact = ai?.BusinessImpact,
+                OccurredAtUtc = record.OccurredAtUtc,
+                CompletedAtUtc = now
+            };
+
+            // Add the event to the transactional outbox.
+            var outboxEvent = new NotificationOutboxEntity
+            {
+                Id = Guid.NewGuid(),
+                EventId = completedEvent.EventId,
+                IdempotencyKey = completedEvent.IdempotencyKey,
+                PayloadJson = JsonSerializer.Serialize(completedEvent),
+                Status = "Pending",
+                AttemptCount = 0,
+                NextAttemptAtUtc = now,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            };
+
+            dbContext.NotificationOutbox.Add(outboxEvent);
+
             // Complete the event and release ownership.
             failure.InvestigationStatus = "Completed";
             failure.NextRetryAtUtc = null;
@@ -124,6 +158,7 @@ public sealed class FailureInvestigationRepository(
             failure.ProcessingLeaseExpiresAtUtc = null;
             failure.LeaseId = null;
 
+            // Save investigation, parent event and outbox atomically.
             await dbContext.SaveChangesAsync(cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);

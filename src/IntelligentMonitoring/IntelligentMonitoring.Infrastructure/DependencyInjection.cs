@@ -1,11 +1,10 @@
-﻿using IntelligentMonitoring.Application.Abstractions.Investigations;
+﻿
+using IntelligentMonitoring.Application.Abstractions.Investigations;
 using IntelligentMonitoring.Application.Abstractions.Logging;
+using IntelligentMonitoring.Infrastructure.AI.Ollama;
 using IntelligentMonitoring.Infrastructure.Logging.Loki;
-using IntelligentMonitoring.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using IntelligentMonitoring.Infrastructure.AI.Ollama;
 
 namespace IntelligentMonitoring.Infrastructure;
 
@@ -19,10 +18,6 @@ public static class DependencyInjection
             ?? throw new InvalidOperationException(
                 "Loki:BaseUrl configuration is missing.");
 
-        var connectionString =
-            configuration.GetConnectionString("MonitoringDb")
-            ?? throw new InvalidOperationException(
-                "MonitoringDb connection string is missing.");
         var ollamaBaseUrl = configuration["Ollama:BaseUrl"]
             ?? throw new InvalidOperationException(
                 "Ollama:BaseUrl configuration is missing.");
@@ -31,7 +26,13 @@ public static class DependencyInjection
             "Ollama:TimeoutSeconds",
             120);
 
-        services.AddHttpClient<IFailureAnalysisService, OllamaFailureAnalysisService>(
+        // SQL Server and repositories
+        services.AddMonitoringPersistence(configuration);
+
+        // Ollama AI
+        services.AddHttpClient<
+            IFailureAnalysisService,
+            OllamaFailureAnalysisService>(
             client =>
             {
                 client.BaseAddress = new Uri(ollamaBaseUrl);
@@ -39,25 +40,14 @@ public static class DependencyInjection
             });
 
         // Loki
-        services.AddHttpClient<ILokiLogRepository, LokiLogRepository>(
+        services.AddHttpClient<
+            ILokiLogRepository,
+            LokiLogRepository>(
             client =>
             {
                 client.BaseAddress = new Uri(lokiBaseUrl);
                 client.Timeout = TimeSpan.FromSeconds(30);
             });
-
-        // SQL Server
-        services.AddDbContext<MonitoringDbContext>(options =>
-            options.UseSqlServer(connectionString));
-
-        // Persistence repository
-        services.AddScoped<
-            IFailureInvestigationRepository,
-            FailureInvestigationRepository>();
-
-        services.AddScoped<
-            IFailureEventRepository,
-            FailureEventRepository>();
 
         return services;
     }
