@@ -1,4 +1,5 @@
 ﻿
+using IntelligentMonitoring.AgentFramework.Learning.Middleware;
 using IntelligentMonitoring.AgentFramework.Learning.Tools;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -7,50 +8,72 @@ using OllamaSharp;
 var endpoint = "http://localhost:11434";
 var modelName = "qwen2.5:3b";
 
-// 1. Create the model client.
-IChatClient chatClient = new OllamaApiClient(
-    new Uri(endpoint),
+// 1. Create the original Ollama client.
+var httpClient = new HttpClient
+{
+    BaseAddress = new Uri(endpoint),
+    Timeout = TimeSpan.FromMinutes(5)
+};
+
+IChatClient ollamaClient = new OllamaApiClient(
+    httpClient,
     modelName);
 
-// 2. Register our C# method as an agent tool.
+// 2. Add Chat Middleware around Ollama.
+IChatClient chatClient = new ChatClientBuilder(ollamaClient)
+    .Use(
+        getResponseFunc: ChatLoggingMiddleware.InvokeAsync,
+        getStreamingResponseFunc: ChatLoggingMiddleware.InvokeStreamingAsync)
+    .Build();
+
+// 3. Register the transaction tool.
 var transactionTool =
     AIFunctionFactory.Create(
         TransactionTools.GetTransactionDetails);
 
-// 3. Create the agent and provide its tool.
-AIAgent agent = chatClient.AsAIAgent(
+// 4. Create the agent using the instrumented chat client.
+AIAgent baseAgent = chatClient.AsAIAgent(
     name: "IntegrationInvestigationAgent",
     instructions: """
         You are an Integration Failure Investigation Specialist.
 
-        You can investigate transactions using the tools
-        available to you.
+        Use the available transaction tool when investigating
+        a specific transaction.
 
-        Rules:
-        1. When the user asks about a specific transaction,
-           retrieve its details using GetTransactionDetails.
-        2. Base your analysis on the returned transaction data.
-        3. Never invent transaction details or log evidence.
-        4. Clearly explain the possible root cause.
-        5. Recommend practical troubleshooting steps.
-        6. If a transaction is not found, explain that clearly.
+        Explain the probable root cause and business impact.
+        Recommend practical troubleshooting steps.
+
+        Never invent transaction information or log evidence.
         """,
     tools: [transactionTool]);
 
-// 4. Ask the agent to investigate a real transaction
-// from the tool's demo dataset.
-var response = await agent.RunAsync(
-    """
-    Please investigate transaction TXN-20003.
+// 5. Register Agent and Function Middleware.
+AIAgent agent = baseAgent
+    .AsBuilder()
+    .Use(
+        runFunc: AgentLoggingMiddleware.InvokeAsync,
+        runStreamingFunc: AgentLoggingMiddleware.InvokeStreamingAsync)
+    .Use(FunctionLoggingMiddleware.InvokeAsync)
+    .Build();
 
-    Retrieve its transaction details first.
-    Then explain the failure, probable root cause,
-    business impact and recommended troubleshooting steps.
-    """);
+// 6. Execute the investigation.
+var query = """
+    Investigate transaction TXN-20003.
 
-// 5. Display the result.
-Console.WriteLine("========================================");
-Console.WriteLine("INTEGRATION INVESTIGATION AGENT");
-Console.WriteLine("========================================");
+    Retrieve its transaction details using the available tool.
 
+    Explain:
+    1. What happened?
+    2. What is the probable root cause?
+    3. What is the potential business impact?
+    4. What should the support team investigate?
+    """;
+
+Console.WriteLine("Starting investigation...");
+
+var response = await agent.RunAsync(query);
+
+Console.WriteLine();
+Console.WriteLine("========== AGENT RESPONSE ==========");
 Console.WriteLine(response);
+Console.WriteLine("====================================");
