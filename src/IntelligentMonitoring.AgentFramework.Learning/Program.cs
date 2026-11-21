@@ -1,79 +1,79 @@
 ﻿
-using IntelligentMonitoring.AgentFramework.Learning.Middleware;
-using IntelligentMonitoring.AgentFramework.Learning.Tools;
-using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
-using OllamaSharp;
+using IntelligentMonitoring.AgentFramework.Learning.Executors;
+using IntelligentMonitoring.AgentFramework.Learning.Models;
+using Microsoft.Agents.AI.Workflows;
 
-var endpoint = "http://localhost:11434";
-var modelName = "qwen2.5:3b";
+// 1. Create executors.
+var validationExecutor = new TransactionValidationExecutor();
 
-// 1. Create the original Ollama client.
-var httpClient = new HttpClient
+var preparationExecutor = new InvestigationPreparationExecutor();
+
+// 2. Configure the workflow.
+WorkflowBuilder builder = new(validationExecutor);
+
+builder.AddEdge(validationExecutor, preparationExecutor);
+
+builder.WithOutputFrom(preparationExecutor);
+
+var workflow = builder
+    .WithName("TypedTransactionInvestigationWorkflow")
+    .WithDescription(
+        "Validates investigation context and prepares an investigation.")
+    .Build();
+
+// 3. Prepare workflow input.
+var input = new InvestigationWorkflowContext
 {
-    BaseAddress = new Uri(endpoint),
-    Timeout = TimeSpan.FromMinutes(5)
+    EventId = Guid.NewGuid(),
+    TransactionId = "TXN-20003",
+    TraceId = "TRACE-20003",
+    ServiceName = "warehouse-events-api",
+    Environment = "QA"
 };
 
-IChatClient ollamaClient = new OllamaApiClient(
-    httpClient,
-    modelName);
+Console.WriteLine("========================================");
+Console.WriteLine("TYPED INVESTIGATION WORKFLOW");
+Console.WriteLine("========================================");
 
-// 2. Add Chat Middleware around Ollama.
-IChatClient chatClient = new ChatClientBuilder(ollamaClient)
-    .Use(
-        getResponseFunc: ChatLoggingMiddleware.InvokeAsync,
-        getStreamingResponseFunc: ChatLoggingMiddleware.InvokeStreamingAsync)
-    .Build();
+Console.WriteLine($"Transaction: {input.TransactionId}");
 
-// 3. Register the transaction tool.
-var transactionTool =
-    AIFunctionFactory.Create(
-        TransactionTools.GetTransactionDetails);
+// 4. Execute workflow.
+try
+{
+    await using var run = await InProcessExecution.RunAsync(
+        workflow,
+        input);
 
-// 4. Create the agent using the instrumented chat client.
-AIAgent baseAgent = chatClient.AsAIAgent(
-    name: "IntegrationInvestigationAgent",
-    instructions: """
-        You are an Integration Failure Investigation Specialist.
+    foreach (var workflowEvent in run.NewEvents)
+    {
+        if (workflowEvent is ExecutorCompletedEvent completed)
+        {
+            Console.WriteLine(
+                $"Executor completed: {completed.ExecutorId}");
+        }
 
-        Use the available transaction tool when investigating
-        a specific transaction.
-
-        Explain the probable root cause and business impact.
-        Recommend practical troubleshooting steps.
-
-        Never invent transaction information or log evidence.
-        """,
-    tools: [transactionTool]);
-
-// 5. Register Agent and Function Middleware.
-AIAgent agent = baseAgent
-    .AsBuilder()
-    .Use(
-        runFunc: AgentLoggingMiddleware.InvokeAsync,
-        runStreamingFunc: AgentLoggingMiddleware.InvokeStreamingAsync)
-    .Use(FunctionLoggingMiddleware.InvokeAsync)
-    .Build();
-
-// 6. Execute the investigation.
-var query = """
-    Investigate transaction TXN-20003.
-
-    Retrieve its transaction details using the available tool.
-
-    Explain:
-    1. What happened?
-    2. What is the probable root cause?
-    3. What is the potential business impact?
-    4. What should the support team investigate?
-    """;
-
-Console.WriteLine("Starting investigation...");
-
-var response = await agent.RunAsync(query);
+        if (workflowEvent is WorkflowOutputEvent output)
+        {
+            if (output.Data is InvestigationPreparationResult result)
+            {
+                Console.WriteLine();
+                Console.WriteLine("========== FINAL RESULT ==========");
+                Console.WriteLine($"Event ID: {result.EventId}");
+                Console.WriteLine($"Transaction ID: {result.TransactionId}");
+                Console.WriteLine($"Trace ID: {result.TraceId}");
+                Console.WriteLine($"Service: {result.ServiceName}");
+                Console.WriteLine($"Environment: {result.Environment}");
+                Console.WriteLine($"Status: {result.Status}");
+                Console.WriteLine($"Message: {result.Message}");
+            }
+        }
+    }
+}
+catch (Exception ex)
+{
+    Console.WriteLine("Workflow execution failed.");
+    Console.WriteLine(ex.Message);
+}
 
 Console.WriteLine();
-Console.WriteLine("========== AGENT RESPONSE ==========");
-Console.WriteLine(response);
-Console.WriteLine("====================================");
+Console.WriteLine("WORKFLOW FINISHED");
